@@ -7,7 +7,7 @@
 
     <!-- Subgoal Publisher, Pure Pursuit Algorithm-->
     <node name="pure_pursuit" pkg="drl_vo_nav" type="pure_pursuit.py" output="screen" required="true">
-      <remap from="path" to="move_base/NavfnROS/plan"/>
+      <remap from="path" to="/move_base/GlobalPlanner/plan"/>
       <param name="rate"  type="double" value="20"  />
     </node>
 

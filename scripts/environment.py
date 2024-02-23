@@ -2,11 +2,13 @@
 # Multi Robots simulation can inherit Class IsaacConnection
 
 from omni.isaac.kit import SimulationApp
+import os
 
-CARTER_USD_PATH = "/home/gr-agv-lx91/isaac_sim_ws/src/isaac_sim/isaac/carter.usd"
-ENV_USD_PATH = "/home/gr-agv-lx91/isaac_sim_ws/src/isaac_sim/isaac/env.usd"
+linux_user = os.getlogin()
+CARTER_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/carter.usd"
+ENV_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/env.usd"
 config = {
-    "headless": False,
+    "headless": False
 }
 simulation_app = SimulationApp(config)
 
