@@ -90,6 +90,7 @@ class IsaacSimConnection:
                 self.world.step()
                 self.state = SimulationState.NORMAL
             elif self.state == SimulationState.RESET:
+                self.world.pause()
                 self.robot.set_world_pose(
                     position=np.array([1.5, 1.5, 0]),
                     orientation=np.array([1.0, 0.0, 0.0, 0.0])
