@@ -10,6 +10,7 @@ project(isaac_sim)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
+  message_generation
 )
 
 ## System dependencies are found with CMake's conventions
@@ -53,11 +54,10 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate services in the 'srv' folder
-# add_service_files(
-#   FILES
-#   Service1.srv
-#   Service2.srv
-# )
+add_service_files(
+  FILES
+  InitPose.srv
+)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -67,10 +67,6 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   std_msgs  # Or other packages containing msgs
-# )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -102,10 +98,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-#  INCLUDE_DIRS include
-#  LIBRARIES isaac_sim
-#  CATKIN_DEPENDS roscpp rospy
-#  DEPENDS system_lib
+  CATKIN_DEPENDS message_runtime roscpp rospy
 )
 
 ###########

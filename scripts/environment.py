@@ -33,6 +33,7 @@ from omni.isaac.core.utils.stage import add_reference_to_stage
 import rospy
 from std_srvs.srv import Empty, EmptyResponse
 import rosgraph
+from isaac_sim.srv import InitPose
 
 
 class SimulationState(Enum):
@@ -54,9 +55,10 @@ class IsaacSimConnection:
         while not rosgraph.is_master_online():
             carb.log_error("Please run roscore before executing this script")
             time.sleep(2.0)
+        self.reset_pose = (1.5, 1.5, 0)
         self.pause_sub = rospy.Service("/pause", Empty, self._pause_callback)
         self.unpause_sub = rospy.Service("/unpause", Empty, self._unpause_callback)
-        self.reset_sub = rospy.Service("/reset", Empty, self._reset_callback)
+        self.reset_sub = rospy.Service("/reset", InitPose, self._reset_callback)
         self.close_sub = rospy.Service("/close", Empty, self._close_callback)
 
     def setup_scene(self):
@@ -71,8 +73,6 @@ class IsaacSimConnection:
         self._add_robot()
         self._add_env()
         self._add_action_graph()
-        # self.world.reset()
-        # self.set_namespace()
 
     def cycle(self):
         self.world.reset()
@@ -92,8 +92,8 @@ class IsaacSimConnection:
             elif self.state == SimulationState.RESET:
                 self.world.pause()
                 self.robot.set_world_pose(
-                    position=np.array([1.5, 1.5, 0]),
-                    orientation=np.array([1.0, 0.0, 0.0, 0.0])
+                    position=np.array([self.reset_pose[0], self.reset_pose[1], 0]),
+                    orientation=np.array([np.cos(self.reset_pose[2] / 2), 0.0, 0.0, np.sin(self.reset_pose[2] / 2)])
                 )
                 self.world.play()
                 self.world.step()
@@ -113,8 +113,8 @@ class IsaacSimConnection:
                 wheel_dof_names=wheel_dof_names,
                 create_robot=True,
                 usd_path=CARTER_USD_PATH,
-                position=np.array([1.5, 1.5, 0]),
-                orientation=np.array([1.0, 0.0, 0.0, 0.0])
+                position=np.array([self.reset_pose[0], self.reset_pose[1], 0]),
+                orientation=np.array([np.cos(self.reset_pose[2] / 2), 0.0, 0.0, np.sin(self.reset_pose[2] / 2)])
             )
         )
         self.robots.append(self.robot)
@@ -150,11 +150,6 @@ class IsaacSimConnection:
             }
         )
 
-    @staticmethod
-    def _set_namespace():
-        graph = og.Controller.graph("/World/Carter/Carter_Control_Graph")
-        og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value="Carter")
-
     def _pause_callback(self, msg):
         self.state = SimulationState.PAUSE
         return EmptyResponse()
@@ -165,6 +160,11 @@ class IsaacSimConnection:
 
     def _reset_callback(self, msg):
         self.state = SimulationState.RESET
+        self.reset_pose = (
+            msg.x,
+            msg.y,
+            msg.yaw
+        )
         return EmptyResponse()
 
     def _close_callback(self, msg):
