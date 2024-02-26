@@ -33,7 +33,7 @@ from omni.isaac.core.utils.stage import add_reference_to_stage
 import rospy
 from std_srvs.srv import Empty, EmptyResponse
 import rosgraph
-from isaac_sim.srv import InitPose
+from isaac_sim.srv import InitPose, InitPoseResponse
 
 
 class SimulationState(Enum):
@@ -160,12 +160,8 @@ class IsaacSimConnection:
 
     def _reset_callback(self, msg):
         self.state = SimulationState.RESET
-        self.reset_pose = (
-            msg.x,
-            msg.y,
-            msg.yaw
-        )
-        return EmptyResponse()
+        self.reset_pose = (msg.x, msg.y, msg.yaw)
+        return InitPoseResponse()
 
     def _close_callback(self, msg):
         self.state = SimulationState.CLOSE
