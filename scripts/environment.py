@@ -1,6 +1,7 @@
 # This is an Isaac Sim Connection Scripts for single Carter-v1 robot
 # Multi Robots simulation can inherit Class IsaacConnection
-
+import angles
+import tf2_ros
 from omni.isaac.kit import SimulationApp
 import os
 
@@ -28,12 +29,21 @@ from omni.isaac.wheeled_robots.controllers.differential_controller import Differ
 from omni.isaac.core.prims import XFormPrim, GeometryPrim
 import omni.graph.core as og
 from omni.isaac.core.utils.stage import add_reference_to_stage
+from omni.isaac.cloner import GridCloner
+from omni.isaac.core.articulations import ArticulationView, Articulation
 
 # ros
 import rospy
 from std_srvs.srv import Empty, EmptyResponse
 import rosgraph
 from isaac_sim.srv import InitPose, InitPoseResponse
+from tf2_msgs.msg import TFMessage
+from geometry_msgs.msg import TransformStamped, Quaternion
+from tf.transformations import quaternion_from_euler, euler_from_quaternion
+from tf2_ros.transform_broadcaster import TransformBroadcaster
+from tf2_ros.transform_listener import TransformListener
+from tf2_ros import Buffer
+from rosgraph_msgs.msg import Clock
 
 
 class SimulationState(Enum):
@@ -56,10 +66,15 @@ class IsaacSimConnection:
             carb.log_error("Please run roscore before executing this script")
             time.sleep(2.0)
         self.reset_pose = (1.5, 1.5, 0)
-        self.pause_sub = rospy.Service("/pause", Empty, self._pause_callback)
-        self.unpause_sub = rospy.Service("/unpause", Empty, self._unpause_callback)
-        self.reset_sub = rospy.Service("/reset", InitPose, self._reset_callback)
-        self.close_sub = rospy.Service("/close", Empty, self._close_callback)
+        self.time = None
+        self.pause_server = rospy.Service("/pause", Empty, self._pause_callback)
+        self.unpause_server = rospy.Service("/unpause", Empty, self._unpause_callback)
+        self.reset_server = rospy.Service("/reset", InitPose, self._reset_callback)
+        self.close_server = rospy.Service("/close", Empty, self._close_callback)
+        self.clock_sub = rospy.Subscriber("/clock", Clock, self._clock_callback, queue_size=1)
+        self.tf_buffer = Buffer()
+        self.broadcaster = TransformBroadcaster()
+        self.listener = TransformListener(self.tf_buffer)
 
     def setup_scene(self):
         self.world = World(stage_units_in_meters=1.0)
@@ -81,6 +96,8 @@ class IsaacSimConnection:
         self.world.play()
         simulation_app.update()
         while simulation_app.is_running:
+            pos, ori = self.robot.get_world_pose()
+            self._pub_robot_pose(pos[0], pos[1], ori)
             if self.state == SimulationState.NORMAL:
                 self.world.step()
             elif self.state == SimulationState.PAUSE:
@@ -166,6 +183,37 @@ class IsaacSimConnection:
     def _close_callback(self, msg):
         self.state = SimulationState.CLOSE
         return EmptyResponse()
+
+    def _clock_callback(self, msg: Clock):
+        self.time = msg.clock
+
+    def _pub_robot_pose(self, x, y, quaternion):
+        if self.time is None:
+            return
+        try:
+            trans = self.tf_buffer.lookup_transform(
+                target_frame="odom",
+                source_frame="base_link",
+                time=rospy.Time()
+            )
+        except tf2_ros.LookupException:
+            return
+        transform = TransformStamped()
+        transform.header.stamp = self.time
+        transform.header.frame_id = "map"
+        transform.child_frame_id = "odom"
+        transform.transform.translation.x = x - trans.transform.translation.x
+        transform.transform.translation.y = y - trans.transform.translation.y
+        transform.transform.translation.z = 0.0
+        _, _, yaw1 = euler_from_quaternion([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
+        _, _, yaw2 = euler_from_quaternion([trans.transform.rotation.x, trans.transform.rotation.y,
+                                            trans.transform.rotation.z, trans.transform.rotation.w])
+        q = quaternion_from_euler(0.0, 0.0, angles.normalize_angle(yaw1 - yaw2))
+        transform.transform.rotation.x = q[0]
+        transform.transform.rotation.y = q[1]
+        transform.transform.rotation.z = q[2]
+        transform.transform.rotation.w = q[3]
+        self.broadcaster.sendTransform(transform)
 
 
 if __name__ == "__main__":

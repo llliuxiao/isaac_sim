@@ -1,5 +1,5 @@
 <launch>
-    <include file="$(find isaac_sim)/launch/amcl.launch"/>
+<!--     <include file="$(find isaac_sim)/launch/amcl.launch"/> -->
     <param name="use_sim_time" value="true"/>
     <node pkg="move_base" type="move_base" name="move_base" respawn="false" output="screen">
         <rosparam file="$(find isaac_sim)/config/costmap_common_config.yaml" command="load" ns="global_costmap" />

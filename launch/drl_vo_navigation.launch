@@ -35,7 +35,7 @@
     </node>
 
     <!-- AMCL -->
-    <include file="$(find isaac_sim)/launch/amcl.launch"/>
+<!--     <include file="$(find isaac_sim)/launch/amcl.launch"/> -->
 
     <!-- Move Base -->
     <node pkg="move_base" type="move_base" name="move_base" respawn="false" output="screen">
