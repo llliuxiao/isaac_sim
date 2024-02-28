@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /LaserScan1
         - /Local_Costmap1
+        - /TF1
         - /TF1/Frames1
         - /TF1/Tree1
         - /footprint1
@@ -148,7 +149,7 @@ Visualization Manager:
         map:
           Value: true
         odom:
-          Value: false
+          Value: true
         rear_pivot_link:
           Value: false
         rear_wheel_link:
@@ -254,7 +255,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz/Orbit
-      Distance: 33.74266815185547
+      Distance: 34.36415481567383
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -262,17 +263,17 @@ Visualization Manager:
         Value: false
       Field of View: 0.7853981852531433
       Focal Point:
-        X: 4.436704635620117
-        Y: 5.599403381347656
-        Z: -3.65830397605896
+        X: 4.020833969116211
+        Y: -6.845821380615234
+        Z: -4.4807963371276855
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5047963857650757
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
-      Yaw: 4.715500831604004
+      Yaw: 4.690497398376465
     Saved: ~
 Window Geometry:
   Displays:
@@ -290,5 +291,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1112
-  X: -116
-  Y: 64
+  X: 800
+  Y: 50

@@ -3,6 +3,9 @@
     <arg name="enable_console_output" default="true"/>
     <arg name="model_file"   default="$(find drl_vo_nav)/src/model/drl_pre_train.zip"/>
     <arg name="log_dir"   default="$(find isaac_sim)/logs/runs"/>
+    <arg name="use_sim_position" default="false" />
+    <arg name="map" default="warehouse" />
+
     <param name="use_sim_time" value="true"/>
 
     <!-- Subgoal Publisher, Pure Pursuit Algorithm-->
@@ -28,6 +31,7 @@
     <node name="drl_vo_cmd" pkg="drl_vo_nav" type="drl_vo_train.py" output="screen">
       <param name="model_file" value="$(arg model_file)" type="string"/>
       <param name="log_dir" value="$(arg log_dir)" type="string"/>
+      <param name="use_sim_position" value="$(arg use_sim_position)" type="bool" />
     </node>
 
     <!-- Mix cmd vel publisher, The exact node publishing velocity command to Isaac Sim -->
@@ -36,7 +40,7 @@
     </node>
 
     <!-- AMCL -->
-<!--     <include file="$(find isaac_sim)/launch/amcl.launch"/> -->
+    <include file="$(find isaac_sim)/launch/amcl.launch"/>
 
     <!-- Move Base -->
     <node pkg="move_base" type="move_base" name="move_base" respawn="false" output="screen">
@@ -52,7 +56,7 @@
     </node>
 
     <!-- Map Server -->>
-    <node pkg="map_server" type="map_server" name="map_server" args="$(find isaac_sim)/map/isaac_map.yaml" />
+    <node pkg="map_server" type="map_server" name="map_server" args="$(find isaac_sim)/map/$(arg map).yaml" />
 
     <!-- Rviz -->>
     <node pkg="rviz" type="rviz" name="rviz" required="true" args="-d $(find isaac_sim)/rviz/carter.rviz" output="screen" />

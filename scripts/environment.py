@@ -7,7 +7,6 @@ import os
 
 linux_user = os.getlogin()
 CARTER_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/carter.usd"
-ENV_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/env.usd"
 config = {
     "headless": False
 }
@@ -39,7 +38,7 @@ import rosgraph
 from isaac_sim.srv import InitPose, InitPoseResponse
 from tf2_msgs.msg import TFMessage
 from geometry_msgs.msg import TransformStamped, Quaternion
-from tf.transformations import quaternion_from_euler, euler_from_quaternion
+from tf.transformations import quaternion_from_euler, euler_from_quaternion, quaternion_from_matrix, quaternion_matrix
 from tf2_ros.transform_broadcaster import TransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
 from tf2_ros import Buffer
@@ -55,7 +54,8 @@ class SimulationState(Enum):
 
 
 class IsaacSimConnection:
-    def __init__(self):
+    def __init__(self, training_scene="warehouse"):
+        self.training_scene = training_scene
         self.setup_ros()
         self.setup_scene()
         self.state = SimulationState.NORMAL
@@ -65,20 +65,21 @@ class IsaacSimConnection:
         while not rosgraph.is_master_online():
             carb.log_error("Please run roscore before executing this script")
             time.sleep(2.0)
-        self.reset_pose = (1.5, 1.5, 0)
+        self.reset_pose = (1.5, 1.5, 0.5)
         self.time = None
         self.pause_server = rospy.Service("/pause", Empty, self._pause_callback)
         self.unpause_server = rospy.Service("/unpause", Empty, self._unpause_callback)
         self.reset_server = rospy.Service("/reset", InitPose, self._reset_callback)
         self.close_server = rospy.Service("/close", Empty, self._close_callback)
         self.clock_sub = rospy.Subscriber("/clock", Clock, self._clock_callback, queue_size=1)
-        self.tf_buffer = Buffer()
-        self.broadcaster = TransformBroadcaster()
-        self.listener = TransformListener(self.tf_buffer)
+        # self.tf_buffer = Buffer()
+        # self.broadcaster = TransformBroadcaster()
+        # self.listener = TransformListener(self.tf_buffer)
 
     def setup_scene(self):
         self.world = World(stage_units_in_meters=1.0)
-        self.world.scene.add_default_ground_plane()
+        if self.training_scene != "warehouse":
+            self.world.scene.add_default_ground_plane()
         self.assets_root_path = get_assets_root_path()
         if self.assets_root_path is None:
             print("Could not find Isaac Sim assets folder")
@@ -95,9 +96,11 @@ class IsaacSimConnection:
         simulation_app.update()
         self.world.play()
         simulation_app.update()
+        robot = Articulation(prim_path="/World/Carter/chassis_link", name="carter")
+        self.world.scene.add(robot)
         while simulation_app.is_running:
-            pos, ori = self.robot.get_world_pose()
-            self._pub_robot_pose(pos[0], pos[1], ori)
+            # pos, ori = robot.get_world_pose()
+            # self._pub_robot_pose(pos[0], pos[1], ori)
             if self.state == SimulationState.NORMAL:
                 self.world.step()
             elif self.state == SimulationState.PAUSE:
@@ -138,12 +141,16 @@ class IsaacSimConnection:
         self.robot_controller = DifferentialController(name="simple_control", wheel_radius=0.0325, wheel_base=0.1125)
 
     def _add_env(self):
+        ENV_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/{self.training_scene}.usd"
+        print(ENV_USD_PATH)
         add_reference_to_stage(usd_path=ENV_USD_PATH, prim_path="/World/Env")
         self.world.scene.add(
             GeometryPrim(
                 prim_path="/World/Env",
                 name="Env",
-                collision=True
+                collision=True,
+                position=np.array([0.0, 0.0, 0.0]),
+                orientation=np.array([1.0, 0.0, 0.0, 0.0])
             )
         )
 
@@ -187,6 +194,7 @@ class IsaacSimConnection:
     def _clock_callback(self, msg: Clock):
         self.time = msg.clock
 
+    # Notice that in ROS, the quaternion is organized as [x, y, z, w], but in isaac sim, it is [w, x, y, z]
     def _pub_robot_pose(self, x, y, quaternion):
         if self.time is None:
             return
@@ -208,6 +216,8 @@ class IsaacSimConnection:
         _, _, yaw1 = euler_from_quaternion([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
         _, _, yaw2 = euler_from_quaternion([trans.transform.rotation.x, trans.transform.rotation.y,
                                             trans.transform.rotation.z, trans.transform.rotation.w])
+        print(x, y, yaw1)
+        print(transform.transform.translation.x, transform.transform.translation.y)
         q = quaternion_from_euler(0.0, 0.0, angles.normalize_angle(yaw1 - yaw2))
         transform.transform.rotation.x = q[0]
         transform.transform.rotation.y = q[1]
@@ -218,5 +228,10 @@ class IsaacSimConnection:
 
 if __name__ == "__main__":
     rospy.init_node("IsaacSimConnection")
-    connection = IsaacSimConnection()
+    if len(sys.argv) > 1:
+        scene = sys.argv[1]
+        assert scene in ["env", "warehouse"]
+        connection = IsaacSimConnection(scene)
+    else:
+        connection = IsaacSimConnection()
     connection.cycle()

@@ -95,8 +95,6 @@ class IsaacSimConnection:
         self.world.initialize_physics()
         simulation_app.update()
         self.world.play()
-        self.world.pause()
-        self.world.reset()
         simulation_app.update()
         while simulation_app.is_running:
             if self.state == SimulationState.NORMAL:
