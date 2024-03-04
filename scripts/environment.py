@@ -43,6 +43,7 @@ from tf2_ros.transform_broadcaster import TransformBroadcaster
 from tf2_ros.transform_listener import TransformListener
 from tf2_ros import Buffer
 from rosgraph_msgs.msg import Clock
+from std_msgs.msg import Float64
 
 
 class SimulationState(Enum):
@@ -55,16 +56,16 @@ class SimulationState(Enum):
 
 class IsaacSimConnection:
     def __init__(self, training_scene="warehouse"):
+        enable_extension("omni.isaac.ros_bridge")
+        while not rosgraph.is_master_online():
+            carb.log_error("Please run roscore before executing this script")
+            time.sleep(2.0)
         self.training_scene = training_scene
         self.setup_ros()
         self.setup_scene()
         self.state = SimulationState.NORMAL
 
     def setup_ros(self):
-        enable_extension("omni.isaac.ros_bridge")
-        while not rosgraph.is_master_online():
-            carb.log_error("Please run roscore before executing this script")
-            time.sleep(2.0)
         self.reset_pose = (1.5, 1.5, 0.5)
         self.time = None
         self.pause_server = rospy.Service("/pause", Empty, self._pause_callback)
@@ -80,10 +81,6 @@ class IsaacSimConnection:
         self.world = World(stage_units_in_meters=1.0)
         if self.training_scene != "warehouse":
             self.world.scene.add_default_ground_plane()
-        self.assets_root_path = get_assets_root_path()
-        if self.assets_root_path is None:
-            print("Could not find Isaac Sim assets folder")
-            sys.exit(-1)
         self.robots = []
         self.obstacles = []
         self._add_robot()
@@ -96,8 +93,6 @@ class IsaacSimConnection:
         simulation_app.update()
         self.world.play()
         simulation_app.update()
-        robot = Articulation(prim_path="/World/Carter/chassis_link", name="carter")
-        self.world.scene.add(robot)
         while simulation_app.is_running:
             # pos, ori = robot.get_world_pose()
             # self._pub_robot_pose(pos[0], pos[1], ori)
@@ -111,10 +106,7 @@ class IsaacSimConnection:
                 self.state = SimulationState.NORMAL
             elif self.state == SimulationState.RESET:
                 self.world.pause()
-                self.robot.set_world_pose(
-                    position=np.array([self.reset_pose[0], self.reset_pose[1], 0]),
-                    orientation=np.array([np.cos(self.reset_pose[2] / 2), 0.0, 0.0, np.sin(self.reset_pose[2] / 2)])
-                )
+                self._reset_process()
                 self.world.play()
                 self.world.step()
                 self.state = SimulationState.NORMAL
@@ -124,11 +116,17 @@ class IsaacSimConnection:
         self.world.stop()
         simulation_app.close()
 
+    def _reset_process(self):
+        self.robot.set_world_pose(
+            position=np.array([self.reset_pose[0], self.reset_pose[1], 0]),
+            orientation=np.array([np.cos(self.reset_pose[2] / 2), 0.0, 0.0, np.sin(self.reset_pose[2] / 2)])
+        )
+
     def _add_robot(self):
         wheel_dof_names = ["left_wheel", "right_wheel"]
         self.robot = self.world.scene.add(
             WheeledRobot(
-                prim_path="/World/Carter",
+                prim_path="/World/Carters/Carter_0",
                 name="Carter",
                 wheel_dof_names=wheel_dof_names,
                 create_robot=True,
@@ -143,10 +141,10 @@ class IsaacSimConnection:
     def _add_env(self):
         ENV_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/{self.training_scene}.usd"
         print(ENV_USD_PATH)
-        add_reference_to_stage(usd_path=ENV_USD_PATH, prim_path="/World/Env")
+        add_reference_to_stage(usd_path=ENV_USD_PATH, prim_path="/World/Envs/Env_0")
         self.world.scene.add(
             GeometryPrim(
-                prim_path="/World/Env",
+                prim_path="/World/Envs/Env_0",
                 name="Env",
                 collision=True,
                 position=np.array([0.0, 0.0, 0.0]),
@@ -195,35 +193,35 @@ class IsaacSimConnection:
         self.time = msg.clock
 
     # Notice that in ROS, the quaternion is organized as [x, y, z, w], but in isaac sim, it is [w, x, y, z]
-    def _pub_robot_pose(self, x, y, quaternion):
-        if self.time is None:
-            return
-        try:
-            trans = self.tf_buffer.lookup_transform(
-                target_frame="odom",
-                source_frame="base_link",
-                time=rospy.Time()
-            )
-        except tf2_ros.LookupException:
-            return
-        transform = TransformStamped()
-        transform.header.stamp = self.time
-        transform.header.frame_id = "map"
-        transform.child_frame_id = "odom"
-        transform.transform.translation.x = x - trans.transform.translation.x
-        transform.transform.translation.y = y - trans.transform.translation.y
-        transform.transform.translation.z = 0.0
-        _, _, yaw1 = euler_from_quaternion([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
-        _, _, yaw2 = euler_from_quaternion([trans.transform.rotation.x, trans.transform.rotation.y,
-                                            trans.transform.rotation.z, trans.transform.rotation.w])
-        print(x, y, yaw1)
-        print(transform.transform.translation.x, transform.transform.translation.y)
-        q = quaternion_from_euler(0.0, 0.0, angles.normalize_angle(yaw1 - yaw2))
-        transform.transform.rotation.x = q[0]
-        transform.transform.rotation.y = q[1]
-        transform.transform.rotation.z = q[2]
-        transform.transform.rotation.w = q[3]
-        self.broadcaster.sendTransform(transform)
+    # def _pub_robot_pose(self, x, y, quaternion):
+    #     if self.time is None:
+    #         return
+    #     try:
+    #         trans = self.tf_buffer.lookup_transform(
+    #             target_frame="odom",
+    #             source_frame="base_link",
+    #             time=rospy.Time()
+    #         )
+    #     except tf2_ros.LookupException:
+    #         return
+    #     transform = TransformStamped()
+    #     transform.header.stamp = self.time
+    #     transform.header.frame_id = "map"
+    #     transform.child_frame_id = "odom"
+    #     transform.transform.translation.x = x - trans.transform.translation.x
+    #     transform.transform.translation.y = y - trans.transform.translation.y
+    #     transform.transform.translation.z = 0.0
+    #     _, _, yaw1 = euler_from_quaternion([quaternion[1], quaternion[2], quaternion[3], quaternion[0]])
+    #     _, _, yaw2 = euler_from_quaternion([trans.transform.rotation.x, trans.transform.rotation.y,
+    #                                         trans.transform.rotation.z, trans.transform.rotation.w])
+    #     print(x, y, yaw1)
+    #     print(transform.transform.translation.x, transform.transform.translation.y)
+    #     q = quaternion_from_euler(0.0, 0.0, angles.normalize_angle(yaw1 - yaw2))
+    #     transform.transform.rotation.x = q[0]
+    #     transform.transform.rotation.y = q[1]
+    #     transform.transform.rotation.z = q[2]
+    #     transform.transform.rotation.w = q[3]
+    #     self.broadcaster.sendTransform(transform)
 
 
 if __name__ == "__main__":

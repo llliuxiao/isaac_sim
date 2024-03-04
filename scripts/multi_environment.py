@@ -1,191 +1,168 @@
-# This is an Isaac Sim Connection Scripts for single Carter-v1 robot
-# Multi Robots simulation can inherit Class IsaacConnection
+# This is an Isaac Sim Connection Scripts for multi Carter-v1 robot
+# The TF Tree is organized as /World ---> /Map ---> /base_link ---> /chassis_link
 
-from omni.isaac.kit import SimulationApp
 import os
 
 linux_user = os.getlogin()
 CARTER_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/carter.usd"
-ENV_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/env.usd"
-config = {
-    "headless": False,
-}
-simulation_app = SimulationApp(config)
+
+# pkg
+from environment import IsaacSimConnection
 
 # utils
 import sys
 import numpy as np
-from enum import Enum
 import carb
 import time
 
 # isaac
-from omni.isaac.core import World
-from omni.isaac.core.utils.extensions import enable_extension
-from omni.isaac.core.utils.nucleus import get_assets_root_path
-from omni.isaac.wheeled_robots.robots import WheeledRobot
-from omni.isaac.wheeled_robots.controllers.differential_controller import DifferentialController
-from omni.isaac.core.prims import XFormPrim, GeometryPrim
 import omni.graph.core as og
 from omni.isaac.core.utils.stage import add_reference_to_stage
+from omni.isaac.cloner import GridCloner
+from omni.isaac.core.articulations import ArticulationView, Articulation
+from omni.isaac.core.prims import XFormPrim, GeometryPrim
+from omni.isaac.core.utils.extensions import enable_extension
 
 # ros
 import rospy
-from std_srvs.srv import Empty, EmptyResponse
+from isaac_sim.srv import InitPose, InitPoseResponse
+from tf2_ros import StaticTransformBroadcaster
 import rosgraph
+from geometry_msgs.msg import TransformStamped
+
+interval = 5.0
 
 
-class SimulationState(Enum):
-    RESET = 0
-    PAUSE = 1
-    UNPAUSE = 2
-    NORMAL = 4
-    CLOSE = 8
-
-
-class IsaacSimConnection:
-    interval = 1.0
-
-    def __init__(self):
-        self.setup_ros()
-        self.setup_scene()
-        self.state = SimulationState.NORMAL
-
-    def setup_ros(self):
+class MultiIsaacSimConnection(IsaacSimConnection):
+    def __init__(self, training_scene="env"):
+        # wait for ros master
         enable_extension("omni.isaac.ros_bridge")
         while not rosgraph.is_master_online():
             carb.log_error("Please run roscore before executing this script")
             time.sleep(2.0)
-        self.pause_sub = rospy.Service("/pause", Empty, self._pause_callback)
-        self.unpause_sub = rospy.Service("/unpause", Empty, self._unpause_callback)
-        self.reset_sub = rospy.Service("/reset", Empty, self._reset_callback)
-        self.close_sub = rospy.Service("/close", Empty, self._close_callback)
-        # while not rospy.has_param("robots_rows"):
-        #     rospy.sleep(1)
-        self.robots_rows = rospy.get_param("/robots_rows", 2)
-        self.robots_columns = rospy.get_param("/robots_columns", 2)
-        self.map_height = rospy.get_param("/map_height", 12)
-        self.map_width = rospy.get_param("/map_width", 12)
 
-    def setup_scene(self):
-        self.world = World(stage_units_in_meters=1.0)
-        self.world.scene.add_default_ground_plane()
-        self.assets_root_path = get_assets_root_path()
-        if self.assets_root_path is None:
-            print("Could not find Isaac Sim assets folder")
-            sys.exit(-1)
+        # get some parameters from ros master
+        params = ["robots_rows", "robots_columns", "map_height", "map_width"]
+        self.config = {}
+        for param in params:
+            while not rospy.has_param(param):
+                rospy.logerr(f"do not has {param} yet")
+                rospy.sleep(2.0)
+            self.config[param] = rospy.get_param(param)
+        self.height = self.config["map_height"] + interval
+        self.width = self.config["map_width"] + interval
+        self.robot_number = self.config["robots_rows"] * self.config["robots_columns"]
+
+        # call init function
+        super().__init__(training_scene)
+
+        # setup environment
+        self._clone_robot(self.robot_number)
+        self._init_robot_pose()
+
+        # setup ros
+        self._pub_static_tf()
+        self._set_namespace(self.robot_number)
+
+        # reset pose containers
+        self.reset_prefix = []
+        self.reset_poses = []
+
+        # robots view
         self.robots = []
-        self._add_action_graph()
-        for row in range(self.robots_rows):
-            for column in range(self.robots_columns):
-                prefix = row * self.robots_columns + column
-                x = self.map_width * column + column * self.interval
-                y = self.map_height * row + row * self.interval
-                self._add_env(prefix=prefix, position=(x, y, 0))
-                self._add_robot(position=(x + 1.5, y + 1.5, 0), prefix=prefix)
-                self.world.reset()
-                self._set_namespace(prefix=prefix)
-    #
-    # self.world.reset()
-    #     for prefix in range(self.robots_rows * self.robots_columns):
-    #         self._set_namespace(prefix=prefix)
 
-    def cycle(self):
+    def _pub_static_tf(self):
+        tf_static_br = StaticTransformBroadcaster()
+        transforms = []
+        transform = TransformStamped()
+        transform.header.frame_id = "/World"
+        for i in range(self.config["robots_rows"]):
+            for j in range(self.config["robots_columns"]):
+                prefix = i * self.config["robots_columns"] + j
+                transform.child_frame_id = f"/Carter{prefix}/map"
+                transform.transform.translation.x = j * self.width
+                transform.transform.translation.y = i * self.height
+                transform.transform.translation.z = 0
+                transform.transform.rotation.w = 1.0
+                transform.transform.rotation.x = 0.0
+                transform.transform.rotation.y = 0.0
+                transform.transform.rotation.z = 0.0
+                transform.header.stamp = rospy.Time.now()
+                transforms.append(transform)
+        tf_static_br.sendTransform(transforms)
+
+    def _init_robot_pose(self):
+        for i in range(self.config["robots_rows"]):
+            for j in range(self.config["robots_columns"]):
+                self.robots[i * self.config["robots_columns"] + j].set_world_pose(
+                    position=np.array([j * self.width + 1.5, i * self.height + 1.5, 0.0]),
+                    orientation=np.array([1.0, 0.0, 0.0, 0.0])
+                )
+
+    def _add_env(self):
+        env_usd_path = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/{self.training_scene}.usd"
+        for i in range(self.config["robots_rows"]):
+            for j in range(self.config["robots_columns"]):
+                add_reference_to_stage(usd_path=env_usd_path, prim_path=f"/World/Envs/Env_{i}_{j}")
+                self.world.scene.add(
+                    GeometryPrim(
+                        prim_path=f"/World/Envs/Env_{i}_{j}",
+                        name=f"Env_{i}_{j}",
+                        collision=True,
+                        position=np.array([j * self.width, i * self.height, 0.0]),
+                    )
+                )
+
+    def _set_namespace(self, number):
         self.world.reset()
-        self.world.initialize_physics()
-        simulation_app.update()
-        self.world.play()
-        simulation_app.update()
-        while simulation_app.is_running:
-            if self.state == SimulationState.NORMAL:
-                self.world.step()
-            elif self.state == SimulationState.PAUSE:
-                self.world.pause()
-            elif self.state == SimulationState.UNPAUSE:
-                self.world.play()
-                self.world.step()
-                self.state = SimulationState.NORMAL
-            elif self.state == SimulationState.RESET:
-                self.world.play()
-                self.world.step()
-                self.state = SimulationState.NORMAL
-            elif self.state == SimulationState.CLOSE:
-                break
-        print("simulation app is out of running")
-        self.world.stop()
-        simulation_app.close()
+        for prefix in range(number):
+            graph = og.Controller.graph(f"/World/Carters/Carter{prefix}/Carter_Control_Graph")
+            rospy.logerr(type(graph))
+            og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter{prefix}")
+            graph = og.Controller.graph(f"/World/Carters/Carter{prefix}/Carter_Sensor_Graph")
+            og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter{prefix}")
+        self.world.reset()
 
-    def _add_robot(self, position, orientation=(1.0, 0.0, 0.0, 0.0), prefix=0):
-        wheel_dof_names = ["left_wheel", "right_wheel"]
-        robot = self.world.scene.add(
-            WheeledRobot(
-                prim_path=f"/World/Carter{prefix}",
-                name=f"Carter{prefix}",
-                wheel_dof_names=wheel_dof_names,
-                create_robot=True,
-                usd_path=CARTER_USD_PATH,
-                position=np.array(position),
-                orientation=np.array(orientation),
+    def _reset_process(self):
+        for prefix in self.reset_prefix:
+            x, y, yaw = self.reset_poses[prefix]
+            position = np.array([x, y, 0])
+            orientation = np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
+            self.robots[prefix].set_world_pose(
+                position=position, orientation=orientation
             )
-        )
-        self.robots.append(robot)
 
-    def _add_env(self, position, prefix=0):
-        add_reference_to_stage(usd_path=ENV_USD_PATH, prim_path=f"/World/Env{prefix}")
-        self.world.scene.add(
-            GeometryPrim(
-                prim_path=f"/World/Env{prefix}",
-                name=f"Env{prefix}",
-                position=np.array(position),
-                collision=True
+    def _clone_robot(self, number):
+        cloner = GridCloner(spacing=50)
+        target_path = cloner.generate_paths("/World/Carters/Carter", number)
+        position_offset = np.array([[0, 0, 0]] * number)
+        cloner.clone(
+            source_prim_path="/World/Carters/Carter0",
+            prim_paths=target_path,
+            position_offsets=position_offset,
+            replicate_physics=True,
+            base_env_path="/World/Carters",
+        )
+        for i in range(1, number):
+            self.robots.append(
+                Articulation(
+                    prim_path=f"/World/Carters/Carter{i}/chassis_link",
+                    name=f"Carter{i}"
+                )
             )
-        )
-
-    @staticmethod
-    def _add_action_graph():
-        keys = og.Controller.Keys
-        og.Controller.edit(
-            {"graph_path": "/World/clock_graph", "evaluator_name": "execution"},
-            {
-                keys.CREATE_NODES: [
-                    ("OnTick", "omni.graph.action.OnPlaybackTick"),
-                    ("SimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
-                    ("ClockPub", "omni.isaac.ros_bridge.ROS1PublishClock"),
-                ],
-                keys.SET_VALUES: [
-                    ("ClockPub.inputs:topicName", "clock"),
-                ],
-                keys.CONNECT: [
-                    ("SimTime.outputs:simulationTime", "ClockPub.inputs:timeStamp"),
-                    ("OnTick.outputs:tick", "ClockPub.inputs:execIn"),
-                ]
-            }
-        )
-
-    def _set_namespace(self, prefix=0):
-        graph = og.Controller.graph(f"/World/Carter{prefix}/Carter_Control_Graph")
-        og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter{prefix}")
-        graph = og.Controller.graph(f"/World/Carter{prefix}/Carter_Sensor_Graph")
-        og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter{prefix}")
-
-    def _pause_callback(self, msg):
-        self.state = SimulationState.PAUSE
-        return EmptyResponse()
-
-    def _unpause_callback(self, msg):
-        self.state = SimulationState.UNPAUSE
-        return EmptyResponse()
+            self.world.scene.add(self.robots[i])
 
     def _reset_callback(self, msg):
-        self.state = SimulationState.RESET
-        return EmptyResponse()
-
-    def _close_callback(self, msg):
-        self.state = SimulationState.CLOSE
-        return EmptyResponse()
+        self.reset_prefix.clear()
+        self.reset_poses.clear()
 
 
 if __name__ == "__main__":
-    rospy.init_node("IsaacSimConnection")
-    connection = IsaacSimConnection()
+    rospy.init_node("MultiIsaacSimConnection")
+    if len(sys.argv) > 1:
+        scene = sys.argv[1]
+        assert scene in ["env", "warehouse"]
+        connection = MultiIsaacSimConnection(scene)
+    else:
+        connection = MultiIsaacSimConnection()
     connection.cycle()
