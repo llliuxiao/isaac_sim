@@ -10,6 +10,8 @@ project(isaac_sim)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
+  geometry_msgs
+  actionlib_msgs
   message_generation
 )
 
@@ -54,17 +56,18 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate services in the 'srv' folder
-add_service_files(
-  FILES
-  InitPose.srv
-)
+#add_service_files(
+#  FILES
+#  InitPose.srv
+#  MultiInitPose.srv
+#)
 
 ## Generate actions in the 'action' folder
-# add_action_files(
-#   FILES
-#   Action1.action
-#   Action2.action
-# )
+add_action_files(
+  FILES
+  ResetPoses.action
+)
+
 
 ## Generate added messages and services with any dependencies listed here
 
@@ -98,7 +101,7 @@ add_service_files(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  CATKIN_DEPENDS message_runtime roscpp rospy
+  CATKIN_DEPENDS message_runtime roscpp rospy geometry_msgs actionlib_msgs message_generation
 )
 
 ###########

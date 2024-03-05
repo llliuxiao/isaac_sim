@@ -26,9 +26,9 @@ from omni.isaac.core.utils.extensions import enable_extension
 # ros
 import rospy
 from isaac_sim.srv import InitPose, InitPoseResponse
-from tf2_ros import StaticTransformBroadcaster
 import rosgraph
 from geometry_msgs.msg import TransformStamped
+from tf2_msgs.msg import TFMessage
 
 interval = 5.0
 
@@ -46,7 +46,7 @@ class MultiIsaacSimConnection(IsaacSimConnection):
         self.config = {}
         for param in params:
             while not rospy.has_param(param):
-                rospy.logerr(f"do not has {param} yet")
+                rospy.logerr(f"do not has param:{param} yet")
                 rospy.sleep(2.0)
             self.config[param] = rospy.get_param(param)
         self.height = self.config["map_height"] + interval
@@ -61,25 +61,20 @@ class MultiIsaacSimConnection(IsaacSimConnection):
         self._init_robot_pose()
 
         # setup ros
+        # A strange problem is that if using tf2 static br, only the trans from world to carter_3 could be pub
+        self.tf_pub = rospy.Publisher("/tf_static", TFMessage, queue_size=100, latch=True)
         self._pub_static_tf()
         self._set_namespace(self.robot_number)
 
-        # reset pose containers
-        self.reset_prefix = []
-        self.reset_poses = []
-
-        # robots view
-        self.robots = []
-
     def _pub_static_tf(self):
-        tf_static_br = StaticTransformBroadcaster()
-        transforms = []
-        transform = TransformStamped()
-        transform.header.frame_id = "/World"
+        msg = TFMessage()
         for i in range(self.config["robots_rows"]):
             for j in range(self.config["robots_columns"]):
                 prefix = i * self.config["robots_columns"] + j
-                transform.child_frame_id = f"/Carter{prefix}/map"
+                transform = TransformStamped()
+                transform.header.stamp = rospy.Time.now()
+                transform.header.frame_id = "/World"
+                transform.child_frame_id = f"/Carter_{prefix}/map"
                 transform.transform.translation.x = j * self.width
                 transform.transform.translation.y = i * self.height
                 transform.transform.translation.z = 0
@@ -87,9 +82,8 @@ class MultiIsaacSimConnection(IsaacSimConnection):
                 transform.transform.rotation.x = 0.0
                 transform.transform.rotation.y = 0.0
                 transform.transform.rotation.z = 0.0
-                transform.header.stamp = rospy.Time.now()
-                transforms.append(transform)
-        tf_static_br.sendTransform(transforms)
+                msg.transforms.append(transform)
+        self.tf_pub.publish(msg)
 
     def _init_robot_pose(self):
         for i in range(self.config["robots_rows"]):
@@ -116,45 +110,31 @@ class MultiIsaacSimConnection(IsaacSimConnection):
     def _set_namespace(self, number):
         self.world.reset()
         for prefix in range(number):
-            graph = og.Controller.graph(f"/World/Carters/Carter{prefix}/Carter_Control_Graph")
-            rospy.logerr(type(graph))
-            og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter{prefix}")
-            graph = og.Controller.graph(f"/World/Carters/Carter{prefix}/Carter_Sensor_Graph")
-            og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter{prefix}")
+            graph = og.Controller.graph(f"/World/Carters/Carter_{prefix}/Carter_Control_Graph")
+            og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter_{prefix}")
+            graph = og.Controller.graph(f"/World/Carters/Carter_{prefix}/Carter_Sensor_Graph")
+            og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter_{prefix}")
         self.world.reset()
-
-    def _reset_process(self):
-        for prefix in self.reset_prefix:
-            x, y, yaw = self.reset_poses[prefix]
-            position = np.array([x, y, 0])
-            orientation = np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
-            self.robots[prefix].set_world_pose(
-                position=position, orientation=orientation
-            )
 
     def _clone_robot(self, number):
         cloner = GridCloner(spacing=50)
         target_path = cloner.generate_paths("/World/Carters/Carter", number)
         position_offset = np.array([[0, 0, 0]] * number)
         cloner.clone(
-            source_prim_path="/World/Carters/Carter0",
+            source_prim_path="/World/Carters/Carter_0",
             prim_paths=target_path,
             position_offsets=position_offset,
             replicate_physics=True,
             base_env_path="/World/Carters",
         )
+        self.robots.append(self.robot)
         for i in range(1, number):
             self.robots.append(
                 Articulation(
-                    prim_path=f"/World/Carters/Carter{i}/chassis_link",
-                    name=f"Carter{i}"
+                    prim_path=f"/World/Carters/Carter_{i}/chassis_link",
+                    name=f"Carter_{i}"
                 )
             )
-            self.world.scene.add(self.robots[i])
-
-    def _reset_callback(self, msg):
-        self.reset_prefix.clear()
-        self.reset_poses.clear()
 
 
 if __name__ == "__main__":
@@ -166,3 +146,4 @@ if __name__ == "__main__":
     else:
         connection = MultiIsaacSimConnection()
     connection.cycle()
+    rospy.spin()
