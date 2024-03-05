@@ -1,20 +1,29 @@
 <launch>
-    <arg name="map" default="warehouse" />
+    <arg name="map" default="env" />
+    <arg name="prefix" default="Carter" />
+    <arg name="launch_rviz" default="true" />
+    <arg name="disable_teb" default="false" />
 
-    <include file="$(find isaac_sim)/launch/amcl.launch"/>
     <param name="use_sim_time" value="true"/>
-    <node pkg="move_base" type="move_base" name="move_base" respawn="false" output="screen">
-        <rosparam file="$(find isaac_sim)/config/costmap_common_config.yaml" command="load" ns="global_costmap" />
-        <rosparam file="$(find isaac_sim)/config/costmap_common_config.yaml" command="load" ns="local_costmap" />
-        <rosparam file="$(find isaac_sim)/config/global_costmap_config.yaml" command="load" />
-        <rosparam file="$(find isaac_sim)/config/local_costmap_config.yaml" command="load" />
-<!--         <rosparam file="$(find isaac_sim)/config/dwa_config.yaml" command="load" /> -->
-        <rosparam file="$(find isaac_sim)/config/teb_config.yaml" command="load" />
-        <rosparam file="$(find isaac_sim)/config/move_base_config.yaml" command="load" />
-        <param name="base_global_planner" value="global_planner/GlobalPlanner" />
-<!--         <param name="base_local_planner" value="dwa_local_planner/DWAPlannerROS" /> -->
-        <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS" />
-    </node>
-    <node pkg="map_server" type="map_server" name="map_server" args="$(find isaac_sim)/map/$(arg map).yaml" />
-    <node pkg="rviz" type="rviz" name="rviz" required="true" args="-d $(find isaac_sim)/rviz/carter.rviz" output="screen" />
+
+    <group ns="$(arg prefix)">
+        <include file="$(find isaac_sim)/launch/amcl.launch"/>
+        <node pkg="move_base" type="move_base" name="move_base" respawn="false" output="screen">
+            <rosparam file="$(find isaac_sim)/config/costmap_common_config.yaml" command="load" ns="global_costmap" />
+            <rosparam file="$(find isaac_sim)/config/costmap_common_config.yaml" command="load" ns="local_costmap" />
+            <rosparam file="$(find isaac_sim)/config/global_costmap_config.yaml" command="load" />
+            <rosparam file="$(find isaac_sim)/config/local_costmap_config.yaml" command="load" />
+            <rosparam file="$(find isaac_sim)/config/teb_config.yaml" command="load" />
+            <rosparam file="$(find isaac_sim)/config/move_base_config.yaml" command="load" />
+            <param name="base_global_planner" value="global_planner/GlobalPlanner" />
+            <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS" />
+            <remap from="cmd_vel" to="teb_cmd_vel" if="$(arg disable_teb)" />
+        </node>
+        <node pkg="map_server" type="map_server" name="map_server" args="$(find isaac_sim)/map/$(arg map).yaml" />
+    </group>
+
+    <group if="$(arg launch_rviz)">
+        <node pkg="rviz" type="rviz" name="rviz" required="true" args="-d $(find isaac_sim)/rviz/carter.rviz" output="screen" />
+    </group>
+
 </launch>
