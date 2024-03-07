@@ -16,4 +16,4 @@ tmux new-window -t $session:$window -n "navigation"
 tmux send-keys -t $session:$window "sleep 15s" C-m
 tmux send-keys -t $session:$window "cd ~/isaac_sim_ws/" C-m
 tmux send-keys -t $session:$window "source devel/setup.bash" C-m
-tmux send-keys -t $session:$window "roslaunch isaac_sim navigation.launch" C-m
+tmux send-keys -t $session:$window "roslaunch isaac_sim single_robot_navigation.launch" C-m

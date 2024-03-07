@@ -22,19 +22,17 @@
             <param name="base_global_planner" value="global_planner/GlobalPlanner" />
             <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS" />
             <param name="local_costmap/global_frame" value="$(arg prefix)/map" />
-            <param name="local_costmap/robot_base_frame" value="$(arg prefix)/base_link" />
+            <rosparam ns="local_costmap">
+                scan:
+                    robot_base_frame: $(arg prefix)/base_link
+            </rosparam>
             <param name="local_costmap/scan/sensor_frame" value="$(arg prefix)/carter_lidar" />
-            <param name="local_costmap/scan/data_type" value="LaserScan" />
-            <param name="local_costmap/scan/topic" value="scan" />
-            <param name="local_costmap/scan/marking" value="true" />
-            <param name="local_costmap/scan/clearing" value="true" />
             <param name="global_costmap/global_frame" value="$(arg prefix)/map" />
             <param name="global_costmap/robot_base_frame" value="$(arg prefix)/base_link" />
-            <param name="global_costmap/scan/sensor_frame" value="$(arg prefix)/carter_lidar" />
-            <param name="global_costmap/scan/data_type" value="LaserScan" />
-            <param name="global_costmap/scan/topic" value="scan" />
-            <param name="global_costmap/scan/marking" value="true" />
-            <param name="global_costmap/scan/clearing" value="true" />
+            <rosparam ns="global_costmap">
+                scan:
+                    robot_base_frame: $(arg prefix)/base_link
+            </rosparam>
             <remap from="cmd_vel" to="teb_cmd_vel" if="$(arg disable_teb)" />
         </node>
         <node pkg="map_server" type="map_server" name="map_server" args="$(find isaac_sim)/map/$(arg map).yaml">
