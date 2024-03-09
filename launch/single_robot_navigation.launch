@@ -14,5 +14,5 @@
         <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS" />
     </node>
     <node pkg="map_server" type="map_server" name="map_server" args="$(find isaac_sim)/map/$(arg map).yaml" />
-    <node pkg="rviz" type="rviz" name="rviz" required="true" args="-d $(find isaac_sim)/rviz/carter.rviz" output="screen" />
+    <node pkg="rviz" type="rviz" name="rviz" required="true" args="-d $(find isaac_sim)/rviz/single_carter.rviz" output="screen" />
 </launch>

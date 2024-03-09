@@ -48,7 +48,7 @@ class SimulationState(Enum):
 
 
 class IsaacSimConnection:
-    def __init__(self, training_scene="warehouse"):
+    def __init__(self, training_scene="env"):
         enable_extension("omni.isaac.ros_bridge")
         while not rosgraph.is_master_online():
             carb.log_error("Please run roscore before executing this script")
@@ -64,7 +64,7 @@ class IsaacSimConnection:
         # reset pose containers
         self.reset_prefix = []
         self.reset_poses = []
-        self.init_pose = (1.5, 1.5, 0.5)
+        self.init_pose = (1.5, 1.5, 0.0)
 
         # robot view
         self.robots = []
@@ -98,6 +98,7 @@ class IsaacSimConnection:
         self.world.play()
         simulation_app.update()
         while simulation_app.is_running:
+            rospy.logdebug_throttle(0.5, self.robot.get_world_pose())
             if self.state == SimulationState.NORMAL:
                 self.world.step()
             elif self.state == SimulationState.PAUSE:
@@ -149,7 +150,6 @@ class IsaacSimConnection:
             )
         )
         self.robots.append(self.robot)
-        self.robot_controller = DifferentialController(name="simple_control", wheel_radius=0.0325, wheel_base=0.1125)
 
     def _add_env(self):
         env_usd_path = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/{self.training_scene}.usd"
