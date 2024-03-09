@@ -98,7 +98,7 @@ class IsaacSimConnection:
         self.world.play()
         simulation_app.update()
         while simulation_app.is_running:
-            rospy.logdebug_throttle(0.5, self.robot.get_world_pose())
+            # rospy.logdebug_throttle(0.5, self.robot.get_world_pose())
             if self.state == SimulationState.NORMAL:
                 self.world.step()
             elif self.state == SimulationState.PAUSE:

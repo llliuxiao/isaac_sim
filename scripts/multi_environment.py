@@ -19,13 +19,13 @@ import time
 import omni.graph.core as og
 from omni.isaac.core.utils.stage import add_reference_to_stage
 from omni.isaac.cloner import GridCloner
+from omni.isaac.wheeled_robots.robots import WheeledRobot
 from omni.isaac.core.articulations import ArticulationView, Articulation
 from omni.isaac.core.prims import XFormPrim, GeometryPrim
 from omni.isaac.core.utils.extensions import enable_extension
 
 # ros
 import rospy
-from isaac_sim.srv import InitPose, InitPoseResponse
 import rosgraph
 from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
@@ -57,8 +57,8 @@ class MultiIsaacSimConnection(IsaacSimConnection):
         super().__init__(training_scene)
 
         # setup environment
-        self._clone_robot(self.robot_number)
-        self._init_robot_pose()
+        # self._clone_robot(self.robot_number)
+        # self._init_robot_pose()
 
         # setup ros
         # A strange problem is that if using tf2 static br, only the trans from world to carter_3 could be pub
@@ -92,6 +92,25 @@ class MultiIsaacSimConnection(IsaacSimConnection):
                     position=np.array([j * self.width + 1.5, i * self.height + 1.5, 0.0]),
                     orientation=np.array([1.0, 0.0, 0.0, 0.0])
                 )
+                print(np.array([j * self.width + 1.5, i * self.height + 1.5, 0.0]))
+
+    def _add_robot(self):
+        wheel_dof_names = ["left_wheel", "right_wheel"]
+        for i in range(self.config["robots_rows"]):
+            for j in range(self.config["robots_columns"]):
+                prefix = i * self.config["robots_columns"] + j
+                robot = self.world.scene.add(
+                    WheeledRobot(
+                        prim_path=f"/World/Carters/Carter_{prefix}",
+                        name=f"Carter_{prefix}",
+                        wheel_dof_names=wheel_dof_names,
+                        create_robot=True,
+                        usd_path=CARTER_USD_PATH,
+                        position=np.array([j * self.width + 1.5, i * self.height + 1.5, 0.0]),
+                        orientation=np.array([1.0, 0.0, 0.0, 0.0])
+                    )
+                )
+                self.robots.append(robot)
 
     def _add_env(self):
         env_usd_path = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/{self.training_scene}.usd"
