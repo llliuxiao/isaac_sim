@@ -133,6 +133,8 @@ class MultiIsaacSimConnection(IsaacSimConnection):
             og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter_{prefix}")
             graph = og.Controller.graph(f"/World/Carters/Carter_{prefix}/Carter_Sensor_Graph")
             og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter_{prefix}")
+            graph = og.Controller.graph(f"/World/Carters/Carter_{prefix}/Carter_Camera_Graph")
+            og.GraphController.set_variable_default_value(variable_id=(graph, "namespace"), value=f"Carter_{prefix}")
         self.world.reset()
 
     def _clone_robot(self, number):
