@@ -82,7 +82,7 @@ class IsaacSimConnection:
 
         # scene
         self.world = World(stage_units_in_meters=1.0)
-        if self.training_scene != "warehouse":
+        if self.training_scene == "env":
             self.world.scene.add_default_ground_plane()
         self._add_robot()
         self._add_env()
@@ -145,7 +145,7 @@ class IsaacSimConnection:
                 wheel_dof_names=wheel_dof_names,
                 create_robot=True,
                 usd_path=CARTER_USD_PATH,
-                position=np.array([self.init_pose[0], self.init_pose[1], 0]),
+                position=np.array([self.init_pose[0], self.init_pose[1], 0.3]),
                 orientation=np.array([np.cos(self.init_pose[2] / 2), 0.0, 0.0, np.sin(self.init_pose[2] / 2)])
             )
         )
@@ -200,7 +200,7 @@ class IsaacSimConnection:
             self.state = SimulationState.UNPAUSE
         return EmptyResponse()
 
-    def _reset_callback(self, msg: ResetPosesAction):
+    def _reset_callback(self, msg):
         with self.reset_lock and self.reset_lock:
             self.state = SimulationState.RESET
             for i, prefix in enumerate(msg.prefix):
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     rospy.init_node("IsaacSimConnection")
     if len(sys.argv) > 1:
         scene = sys.argv[1]
-        assert scene in ["env", "warehouse"]
+        assert scene in ["env", "warehouse", "hospital", "office"]
         connection = IsaacSimConnection(scene)
     else:
         connection = IsaacSimConnection()
