@@ -126,7 +126,7 @@ class IsaacSimConnection:
             for i, prefix in enumerate(self.reset_prefix):
                 try:
                     x, y, yaw = self.reset_poses[i]
-                    position = np.array([x, y, 0])
+                    position = np.array([x, y, 0.3])
                     orientation = np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)])
                     self.robots[prefix].set_world_pose(
                         position=position, orientation=orientation
