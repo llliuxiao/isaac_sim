@@ -67,6 +67,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_action_files(
   FILES
   ResetPoses.action
+  Step.action
 )
 
 

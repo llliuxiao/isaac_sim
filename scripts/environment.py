@@ -7,7 +7,10 @@ import os
 linux_user = os.getlogin()
 CARTER_USD_PATH = f"/home/{linux_user}/isaac_sim_ws/src/isaac_sim/isaac/carter.usd"
 config = {
-    "headless": False
+    "headless": False,
+    # "active_gpu": 0,
+    # "physics_gpu": 0,
+    # "multi_gpu": False
 }
 simulation_app = SimulationApp(config)
 
@@ -27,22 +30,23 @@ from omni.isaac.wheeled_robots.controllers.differential_controller import Differ
 from omni.isaac.core.prims import XFormPrim, GeometryPrim
 import omni.graph.core as og
 from omni.isaac.core.utils.stage import add_reference_to_stage
+from omni.isaac.sensor import RotatingLidarPhysX
+from omni.isaac.range_sensor import _range_sensor
 
 # ros
 import rospy
 from actionlib import SimpleActionServer
 from std_srvs.srv import Empty, EmptyResponse
 import rosgraph
-from isaac_sim.msg import ResetPosesAction
+from isaac_sim.msg import ResetPosesAction, ResetPosesResult, StepAction, StepResult
 from geometry_msgs.msg import Quaternion
 from tf.transformations import euler_from_quaternion
-from rosgraph_msgs.msg import Clock
 
 
 class SimulationState(Enum):
     RESET = 0
     PAUSE = 1
-    UNPAUSE = 2
+    STEP = 2
     NORMAL = 4
     CLOSE = 8
 
@@ -61,10 +65,17 @@ class IsaacSimConnection:
         self.reset_lock = threading.Lock()
         self.state_lock = threading.Lock()
 
+        # laser
+        self.lidar_pool = []
+        self.lidar_capacity = 100
+
         # reset pose containers
         self.reset_prefix = []
         self.reset_poses = []
         self.init_pose = (1.5, 1.5, 0.0)
+        self.step_vel = np.array((0.0, 0.0))
+        self.step_flag = False
+        self.reset_flag = False
 
         # robot view
         self.robots = []
@@ -73,15 +84,14 @@ class IsaacSimConnection:
         self.time = None
 
         # ros
-        self.pause_server = rospy.Service("/pause", Empty, self._pause_callback)
-        self.unpause_server = rospy.Service("/unpause", Empty, self._unpause_callback)
         self.close_server = rospy.Service("/close", Empty, self._close_callback)
-        self.clock_sub = rospy.Subscriber("/clock", Clock, self._clock_callback, queue_size=1)
         self.reset_server = SimpleActionServer("/reset", ResetPosesAction, self._reset_callback, auto_start=False)
+        self.step_server = SimpleActionServer("/step", StepAction, self._step_callback, auto_start=False)
         self.reset_server.start()
+        self.step_server.start()
 
         # scene
-        self.world = World(stage_units_in_meters=1.0)
+        self.world = World(stage_units_in_meters=1.0, physics_dt=0.05, rendering_dt=0.05)
         if self.training_scene == "env":
             self.world.scene.add_default_ground_plane()
         self._add_robot()
@@ -93,28 +103,31 @@ class IsaacSimConnection:
 
     def cycle(self):
         self.world.reset()
-        self.world.initialize_physics()
-        simulation_app.update()
-        self.world.play()
-        simulation_app.update()
-        while simulation_app.is_running:
-            # rospy.logdebug_throttle(0.5, self.robot.get_world_pose())
+        self.carter_lidar.enable_visualization()
+        self.carter_lidar.add_depth_data_to_frame()
+        while simulation_app.is_running():
+            # rospy.logfatal(self.state)
             if self.state == SimulationState.NORMAL:
                 self.world.step()
+                self._store_laser()
             elif self.state == SimulationState.PAUSE:
                 self.world.pause()
-            elif self.state == SimulationState.UNPAUSE:
+            elif self.state == SimulationState.STEP:
+                self.robot.apply_wheel_actions(self.controller.forward(command=self.step_vel))
                 self.world.play()
-                self.world.step()
+                self._store_laser()
                 with self.state_lock:
-                    self.state = SimulationState.NORMAL
+                    self.state = SimulationState.PAUSE
+                    self.step_flag = True
             elif self.state == SimulationState.RESET:
                 self.world.pause()
                 self._reset_process()
+                self.robot.apply_wheel_actions(self.controller.forward(command=np.array((0., 0.))))
                 self.world.play()
-                self.world.step()
+                self._store_laser()
                 with self.state_lock:
                     self.state = SimulationState.NORMAL
+                    self.reset_flag = True
             elif self.state == SimulationState.CLOSE:
                 break
         print("simulation app is out of running")
@@ -135,6 +148,13 @@ class IsaacSimConnection:
                     rospy.logerr("reset msg contains error prefix, reset later")
             self.reset_prefix.clear()
             self.reset_poses.clear()
+            self.lidar_pool.clear()
+
+    def _store_laser(self):
+        cur_laser = self.lidarInterface.get_linear_depth_data(self.lidar_path)
+        if len(self.lidar_pool) >= self.lidar_capacity:
+            self.lidar_pool.pop(0)
+        self.lidar_pool.append(cur_laser)
 
     def _add_robot(self):
         wheel_dof_names = ["left_wheel", "right_wheel"]
@@ -149,6 +169,19 @@ class IsaacSimConnection:
                 orientation=np.array([np.cos(self.init_pose[2] / 2), 0.0, 0.0, np.sin(self.init_pose[2] / 2)])
             )
         )
+        self.lidar_path = "/World/Carters/Carter_0/chassis_link/lidar"
+        self.carter_lidar = self.world.scene.add(
+            RotatingLidarPhysX(
+                prim_path=self.lidar_path,
+                name="lidar",
+                rotation_frequency=0,
+                translation=np.array([-0.06, 0, 0.38]),
+                fov=(270, 0.0), resolution=(0.25, 0.0),
+                valid_range=(0.4, 10.0)
+            )
+        )
+        self.lidarInterface = _range_sensor.acquire_lidar_sensor_interface()
+        self.controller = DifferentialController(name="simple_control", wheel_radius=0.24, wheel_base=0.56)
         self.robots.append(self.robot)
 
     def _add_env(self):
@@ -190,33 +223,50 @@ class IsaacSimConnection:
         _, _, yaw = euler_from_quaternion([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
         return yaw
 
-    def _pause_callback(self, msg):
+    def _step_callback(self, msg):
         with self.state_lock:
-            self.state = SimulationState.PAUSE
-        return EmptyResponse()
-
-    def _unpause_callback(self, msg):
-        with self.state_lock:
-            self.state = SimulationState.UNPAUSE
-        return EmptyResponse()
+            self.step_vel = np.array((msg.forward, msg.angular))
+            self.state = SimulationState.STEP
+            self.step_flag = False
+        # rospy.loginfo("finish lock")
+        while not self.step_flag:
+            time.sleep(0.05)
+        # rospy.loginfo("finish stepping")
+        result = StepResult()
+        result.frames = 6
+        result.ranges = np.array(self._get_lidar()).flatten().tolist()
+        self.step_server.set_succeeded(result=result)
 
     def _reset_callback(self, msg):
-        with self.reset_lock and self.reset_lock:
+        with self.reset_lock and self.state_lock:
             self.state = SimulationState.RESET
+            self.reset_flag = False
             for i, prefix in enumerate(msg.prefix):
                 pose = msg.poses[i]
                 self.reset_prefix.append(prefix)
                 yaw = self._get_yaw(pose.pose.orientation)
                 self.reset_poses.append((pose.pose.position.x, pose.pose.position.y, yaw))
-            self.reset_server.set_succeeded()
+        while not self.reset_flag:
+            time.sleep(0.05)
+        result = ResetPosesResult()
+        result.frames = 6
+        result.ranges = np.array(self._get_lidar()).flatten().tolist()
+        self.reset_server.set_succeeded(result=result)
+
+    def _get_lidar(self, frames=6):
+        lasers = [self.lidar_pool[-1] for _ in range(frames)]
+        for i in range(frames - 1, 0, -1):
+            prefix = len(self.lidar_pool) - i * 10
+            if prefix < 0:
+                continue
+            else:
+                lasers[frames - i - 1] = self.lidar_pool[prefix]
+        return lasers
 
     def _close_callback(self, msg):
         with self.state_lock:
             self.state = SimulationState.CLOSE
         return EmptyResponse()
-
-    def _clock_callback(self, msg: Clock):
-        self.time = msg.clock
 
 
 if __name__ == "__main__":
