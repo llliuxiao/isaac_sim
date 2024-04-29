@@ -68,6 +68,7 @@ add_action_files(
   FILES
   ResetPoses.action
   Step.action
+  Plan.action
 )
 
 
