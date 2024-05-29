@@ -1,6 +1,3 @@
-# This is an Isaac Sim Connection Scripts for single Carter-v1 robot
-# Multi Robots simulation can inherit Class IsaacConnection
-import geometry_msgs.msg
 from omni.isaac.kit import SimulationApp
 import os
 
@@ -12,18 +9,17 @@ config = {
 simulation_app = SimulationApp(config)
 
 # utils
-import sys
 import numpy as np
 from enum import Enum
 import carb
 import time
 import threading
+import argparse
 
 # isaac
 from omni.isaac.core import World
 from omni.isaac.core.utils.extensions import enable_extension
 from omni.isaac.wheeled_robots.robots import WheeledRobot
-from omni.isaac.wheeled_robots.controllers.differential_controller import DifferentialController
 from omni.isaac.core.prims import XFormPrim, GeometryPrim
 import omni.graph.core as og
 from omni.isaac.core.utils.stage import add_reference_to_stage
@@ -48,7 +44,7 @@ class SimulationState(Enum):
 
 
 class IsaacSimConnection:
-    def __init__(self, training_scene="env"):
+    def __init__(self, training_scene):
         enable_extension("omni.isaac.ros_bridge")
         while not rosgraph.is_master_online():
             carb.log_error("Please run roscore before executing this script")
@@ -221,10 +217,8 @@ class IsaacSimConnection:
 
 if __name__ == "__main__":
     rospy.init_node("IsaacSimConnection")
-    if len(sys.argv) > 1:
-        scene = sys.argv[1]
-        assert scene in ["env", "warehouse", "hospital", "office", "small_warehouse"]
-        connection = IsaacSimConnection(scene)
-    else:
-        connection = IsaacSimConnection()
+    parser = argparse.ArgumentParser(description="launch the isaac sim environment for test or trajectory recording")
+    parser.add_argument("-s", "--scene", type=str, help="Name of Scene", default="office")
+    args = parser.parse_args()
+    connection = IsaacSimConnection(args.scene)
     connection.cycle()
