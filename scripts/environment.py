@@ -32,15 +32,12 @@ import rosgraph
 from isaac_sim.msg import ResetPosesAction
 from geometry_msgs.msg import Quaternion
 from tf.transformations import euler_from_quaternion
-from rosgraph_msgs.msg import Clock
 
 
 class SimulationState(Enum):
     RESET = 0
-    PAUSE = 1
-    UNPAUSE = 2
-    NORMAL = 4
-    CLOSE = 8
+    NORMAL = 1
+    CLOSE = 2
 
 
 class IsaacSimConnection:
@@ -69,10 +66,7 @@ class IsaacSimConnection:
         self.time = None
 
         # ros
-        self.pause_server = rospy.Service("/pause", Empty, self._pause_callback)
-        self.unpause_server = rospy.Service("/unpause", Empty, self._unpause_callback)
         self.close_server = rospy.Service("/close", Empty, self._close_callback)
-        self.clock_sub = rospy.Subscriber("/clock", Clock, self._clock_callback, queue_size=1)
         self.reset_server = SimpleActionServer("/reset", ResetPosesAction, self._reset_callback, auto_start=False)
         self.reset_server.start()
 
@@ -94,16 +88,8 @@ class IsaacSimConnection:
         self.world.play()
         simulation_app.update()
         while simulation_app.is_running:
-            # rospy.logdebug_throttle(0.5, self.robot.get_world_pose())
             if self.state == SimulationState.NORMAL:
                 self.world.step()
-            elif self.state == SimulationState.PAUSE:
-                self.world.pause()
-            elif self.state == SimulationState.UNPAUSE:
-                self.world.play()
-                self.world.step()
-                with self.state_lock:
-                    self.state = SimulationState.NORMAL
             elif self.state == SimulationState.RESET:
                 self.world.pause()
                 self._reset_process()
@@ -186,16 +172,6 @@ class IsaacSimConnection:
         _, _, yaw = euler_from_quaternion([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
         return yaw
 
-    def _pause_callback(self, msg):
-        with self.state_lock:
-            self.state = SimulationState.PAUSE
-        return EmptyResponse()
-
-    def _unpause_callback(self, msg):
-        with self.state_lock:
-            self.state = SimulationState.UNPAUSE
-        return EmptyResponse()
-
     def _reset_callback(self, msg):
         with self.reset_lock and self.reset_lock:
             self.state = SimulationState.RESET
@@ -210,9 +186,6 @@ class IsaacSimConnection:
         with self.state_lock:
             self.state = SimulationState.CLOSE
         return EmptyResponse()
-
-    def _clock_callback(self, msg: Clock):
-        self.time = msg.clock
 
 
 if __name__ == "__main__":
